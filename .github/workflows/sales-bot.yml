@@ -1,0 +1,40 @@
+name: Al Cabone Sales Bot
+
+on:
+  schedule:
+    # Runs every 2 hours for sales detection + daily floor alerts
+    - cron: '0 */2 * * *'
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Run sales bot
+      env:
+        TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+        TWITTER_API_SECRET: ${{ secrets.TWITTER_API_SECRET }}
+        TWITTER_ACCESS_TOKEN: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+        TWITTER_ACCESS_SECRET: ${{ secrets.TWITTER_ACCESS_SECRET }}
+        OPENSEA_API_KEY: ${{ secrets.OPENSEA_API_KEY }}
+      run: node bot.js
+      
+    - name: Commit updated last-check file
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add last-check.json
+        git diff --staged --quiet || git commit -m "Update last check timestamp"
+        git push
