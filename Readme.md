@@ -20,6 +20,8 @@ Automated Twitter bot that posts when Al Cabone NFTs are sold, with gangster-the
 
 In your GitHub repo, go to Settings > Secrets and variables > Actions
 
+TWITTER_EMAIL=i.thor.n@gmail.com # Account email
+
 Add these secrets:
 - `TWITTER_API_KEY`
 - `TWITTER_API_SECRET` 
