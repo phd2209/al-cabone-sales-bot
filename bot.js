@@ -6,16 +6,7 @@ const axios = require('axios');
 const fs = require('fs').promises;
 const { TwitterApi } = require('twitter-api-v2');
 
-// Try to load canvas, fallback for environments where it's not available
-let createCanvas, loadImage, registerFont;
-try {
-  const canvas = require('canvas');
-  createCanvas = canvas.createCanvas;
-  loadImage = canvas.loadImage;
-  registerFont = canvas.registerFont;
-} catch (error) {
-  console.log('Canvas not available - image generation will be skipped');
-}
+// No Canvas needed - using simple text + image format
 
 // Configuration
 const AL_CABONE_CONTRACT = '0x8Ca5209d8CCe34b0de91C2C4b4B14F20AFf8BA23';
@@ -183,24 +174,29 @@ function getTierBadge(tier) {
   return badges[tier] || '🎩';
 }
 
-// Fetch recent sales from OpenSea with retry logic
+// Fetch recent sales from OpenSea with timestamp filtering
 async function fetchRecentSales() {
   return await apiCallWithRetry(async () => {
     await sleep(OPENSEA_DELAY);
     
+    // Get last check time to filter new sales
+    const lastCheck = await getLastCheckTime();
+    const lastCheckTimestamp = Math.floor(new Date(lastCheck).getTime() / 1000);
+    
     const response = await axios.get(`https://api.opensea.io/api/v2/events/collection/${COLLECTION_SLUG}`, {
       params: {
         event_type: 'sale',
-        limit: 10 // Smaller limit for testing
+        occurred_after: lastCheckTimestamp,
+        limit: 20
       },
       headers: {
         'X-API-KEY': process.env.OPENSEA_API_KEY
       }
     });
     
-    // Debug logging removed for production
-    
     const events = response.data.asset_events || response.data.events || [];
+    console.log(`Found ${events.length} sales since last check (${new Date(lastCheck).toISOString()})`);
+    
     // Filter for valid single sales only
     return events.filter(isValidSaleEvent);
   }).catch(error => {
@@ -387,246 +383,12 @@ async function updateLastFloorAlert() {
   }
 }
 
-// Create FBI investigation-style image for tweet
-async function createSaleImage(sale, buyerTier, buyerCount, sellerTier, sellerCount) {
-  if (!createCanvas) {
-    console.log('⚠️ Image generation skipped - Canvas not available');
-    return null;
-  }
-  
-  const canvas = createCanvas(800, 600);
-  const ctx = canvas.getContext('2d');
-  
-  // FBI-style dark background
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(0, 0, 800, 600);
-  
-  // Red "TOP SECRET" stamp background
-  ctx.fillStyle = '#8b0000';
-  ctx.font = 'bold 24px Arial';
-  ctx.textAlign = 'center';
-  ctx.save();
-  ctx.rotate(-0.3);
-  ctx.fillText('TOP SECRET', 200, 100);
-  ctx.restore();
-  
-  // FBI Header
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 28px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('FEDERAL BUREAU OF INVESTIGATION', 400, 50);
-  
-  // Case number
-  const caseNum = generateCaseNumber();
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 20px Arial';
-  ctx.fillText(`CASE #${caseNum}`, 400, 80);
-  
-  // Alert line
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 18px Arial';
-  ctx.fillText('New connection detected in Al Cabone network', 400, 110);
-  
-  // Suspect info box
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(50, 140, 700, 100);
-  
-  // Suspect header
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 16px Arial';
-  ctx.textAlign = 'left';
-  ctx.fillText('SUSPECT:', 70, 160);
-  
-  // Suspect details
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '16px Arial';
-  const buyerAddr = sale.buyer?.address || sale.winner_account?.address || 'Unknown';
-  const shortBuyer = buyerAddr !== 'Unknown' ? `${buyerAddr.slice(0, 8)}...${buyerAddr.slice(-4)}` : 'Unknown';
-  ctx.fillText(`Address: ${shortBuyer}`, 70, 180);
-  ctx.fillText(`Rank: ${buyerTier.toUpperCase()} (${buyerCount} NFTs owned)`, 70, 200);
-  ctx.fillText(`Status: ACTIVE INVESTIGATION`, 70, 220);
-  
-  // Acquisition details box
-  ctx.strokeRect(50, 260, 700, 120);
-  
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 16px Arial';
-  ctx.fillText('TRANSACTION DETAILS:', 70, 280);
-  
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '16px Arial';
-  ctx.fillText(`Acquired: "${sale.asset.name}"`, 70, 300);
-  
-  if (sale.total_price) {
-    const ethPrice = (sale.total_price / 1e18).toFixed(3);
-    ctx.fillText(`Value: ${ethPrice} ETH`, 70, 320);
-  }
-  
-  // Seller info
-  const sellerAddr = sale.seller?.address || sale.from_account?.address;
-  const shortSeller = sellerAddr ? `${sellerAddr.slice(0, 8)}...${sellerAddr.slice(-4)}` : 'Unknown';
-  ctx.fillText(`Source: ${sellerTier ? sellerTier.toUpperCase() : 'UNKNOWN'} (${sellerCount || 0} NFTs)`, 70, 340);
-  ctx.fillText(`Seller: ${shortSeller}`, 70, 360);
-  
-  // Evidence stamp
-  ctx.fillStyle = '#8b0000';
-  ctx.font = 'bold 16px Arial';
-  ctx.textAlign = 'center';
-  ctx.save();
-  ctx.rotate(0.2);
-  ctx.fillText('EVIDENCE', 600, 400);
-  ctx.restore();
-  
-  // Classification footer
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 14px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('CLASSIFIED - FOR OFFICIAL USE ONLY', 400, 580);
-  
-  // Timestamp
-  const date = new Date(sale.created_date).toLocaleString();
-  ctx.fillStyle = '#888888';
-  ctx.font = '12px Arial';
-  ctx.textAlign = 'right';
-  ctx.fillText(`Logged: ${date}`, 750, 560);
-  
-  return canvas.toBuffer('image/png');
+// Simple function to get OpenSea link for NFT
+function getNFTOpenSeaLink(contractAddress, tokenId) {
+  return `https://opensea.io/assets/ethereum/${contractAddress}/${tokenId}`;
 }
 
-// Create FBI-style floor price alert image
-async function createFloorAlertImage(floorNFT, floorPrice, nftImageUrl = null) {
-  if (!createCanvas) {
-    console.log('⚠️ Floor image generation skipped - Canvas not available');
-    return null;
-  }
-  
-  const canvas = createCanvas(800, 700); // Increased height for NFT image
-  const ctx = canvas.getContext('2d');
-  
-  // FBI-style dark background
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(0, 0, 800, 700);
-  
-  // Red stamp background
-  ctx.fillStyle = '#8b0000';
-  ctx.font = 'bold 20px Arial';
-  ctx.textAlign = 'center';
-  ctx.save();
-  ctx.rotate(-0.2);
-  ctx.fillText('MOST WANTED', 150, 120);
-  ctx.restore();
-  
-  // FBI Header
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 28px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('FEDERAL BUREAU OF INVESTIGATION', 400, 50);
-  
-  // Case number
-  const caseNum = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 20px Arial';
-  ctx.fillText(`CASE FILE #${caseNum}`, 400, 80);
-  
-  // Subject line
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 18px Arial';
-  ctx.fillText('Subject: Al Cabone spotted lurking in the marketplace', 400, 110);
-  
-  // Most wanted box
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(50, 140, 700, 300);
-  
-  // Status header
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 16px Arial';
-  ctx.textAlign = 'left';
-  ctx.fillText('STATUS:', 70, 170);
-  
-  // Status details
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '18px Arial';
-  ctx.fillText('MOST WANTED ON THE FLOOR', 70, 200);
-  
-  // NFT details
-  ctx.font = 'bold 20px Arial';
-  ctx.fillText(`Target: "${floorNFT.name}"`, 70, 240);
-  
-  // Price
-  ctx.fillStyle = '#f4d03f';
-  ctx.font = 'bold 24px Arial';
-  ctx.fillText(`Price: ${floorPrice}`, 70, 280);
-  
-  // Location
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '16px Arial';
-  ctx.fillText('Location: OpenSea Marketplace', 70, 320);
-  
-  // Token ID
-  if (floorNFT.token_id) {
-    ctx.fillText(`Token ID: #${floorNFT.token_id}`, 70, 350);
-  }
-  
-  // Investigation note
-  ctx.fillStyle = '#888888';
-  ctx.font = 'italic 16px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('"Cheap entry into the family. Question is — who\'ll recruit him?"', 400, 400);
-  
-  // Load and display NFT image if available
-  if (nftImageUrl) {
-    try {
-      const nftImage = await loadImage(nftImageUrl);
-      
-      // Draw NFT image in center with border
-      const imgSize = 150;
-      const imgX = (800 - imgSize) / 2;
-      const imgY = 420;
-      
-      // Image border
-      ctx.strokeStyle = '#f4d03f';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(imgX - 3, imgY - 3, imgSize + 6, imgSize + 6);
-      
-      // Draw NFT image
-      ctx.drawImage(nftImage, imgX, imgY, imgSize, imgSize);
-      
-      // Evidence label
-      ctx.fillStyle = '#f4d03f';
-      ctx.font = 'bold 12px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('EVIDENCE PHOTO', 400, 590);
-      
-    } catch (imageError) {
-      console.error('Error loading NFT image into floor card:', imageError.message);
-    }
-  }
-  
-  // Warning stamp
-  ctx.fillStyle = '#8b0000';
-  ctx.font = 'bold 14px Arial';
-  ctx.save();
-  ctx.rotate(0.15);
-  ctx.fillText('APPROACH WITH CAUTION', 550, 350);
-  ctx.restore();
-  
-  // Classification footer
-  ctx.fillStyle = '#ff0000';
-  ctx.font = 'bold 14px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('CLASSIFIED - FOR OFFICIAL USE ONLY', 400, 680);
-  
-  // Timestamp
-  const date = new Date().toLocaleString();
-  ctx.fillStyle = '#888888';
-  ctx.font = '12px Arial';
-  ctx.textAlign = 'right';
-  ctx.fillText(`Filed: ${date}`, 750, 660);
-  
-  return canvas.toBuffer('image/png');
-}
+// No floor alert image needed - using simple text format
 
 // Get last check timestamp
 async function getLastCheckTime() {
@@ -689,14 +451,23 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
 
 🔍 #AlCabone #FBI #FloorWatch #Investigation`;
 
-          const floorImage = await createFloorAlertImage(floorNFT, floorPrice, nftImageUrl);
+          // Simple tweet with NFT image if available
+          const mediaIds = [];
           
-          // Upload floor alert card (NFT image is now embedded in the card)
-          const cardUpload = await twitterClient.v1.uploadMedia(floorImage, { mimeType: 'image/png' });
+          if (nftImageUrl) {
+            try {
+              const nftImageResponse = await axios.get(nftImageUrl, { responseType: 'arraybuffer' });
+              const nftImageBuffer = Buffer.from(nftImageResponse.data);
+              const nftUpload = await twitterClient.v1.uploadMedia(nftImageBuffer, { mimeType: 'image/png' });
+              mediaIds.push(nftUpload);
+            } catch (imageError) {
+              console.error('Error fetching floor NFT image:', imageError.message);
+            }
+          }
           
           await twitterClient.v2.tweet({
             text: floorMessage,
-            media: { media_ids: [cardUpload] }
+            media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
           });
           
           console.log(`✅ Posted floor alert for ${floorNFT.name} at ${floorPrice}`);
@@ -756,19 +527,18 @@ Status: ACTIVE INVESTIGATION
 💰 Value: ${formatPrice(sale)}
 🔍 #AlCabone #FBI #Investigation`;
       
-      // Get NFT image URL
+      // Get NFT image URL and OpenSea link
       const nftImageUrl = await getNFTImageUrl(AL_CABONE_CONTRACT, sale.nft.identifier);
+      const openseaLink = getNFTOpenSeaLink(AL_CABONE_CONTRACT, sale.nft.identifier);
       
-      // Create FBI-style investigation card
-      const investigationCardBuffer = await createSaleImage(sale, buyerTier, buyerCount, sellerTier, sellerCount);
+      // Add OpenSea link to message
+      const messageWithLink = `${message}
+
+🔗 View on OpenSea: ${openseaLink}`;
       
-      // Post to Twitter with both images
+      // Post to Twitter with just NFT image
       try {
         const mediaIds = [];
-        
-        // Upload investigation card
-        const cardUpload = await twitterClient.v1.uploadMedia(investigationCardBuffer, { mimeType: 'image/png' });
-        mediaIds.push(cardUpload);
         
         // Upload NFT image if available
         if (nftImageUrl) {
@@ -784,11 +554,11 @@ Status: ACTIVE INVESTIGATION
         }
         
         await twitterClient.v2.tweet({
-          text: message,
-          media: { media_ids: mediaIds }
+          text: messageWithLink,
+          media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
         });
         
-        console.log(`✅ Posted tweet for ${sale.asset.name}`);
+        console.log(`✅ Posted tweet for ${sale.nft.name}`);
         
         // Wait between posts to avoid rate limiting
         await sleep(TWITTER_DELAY);
@@ -838,14 +608,17 @@ if (process.argv.includes('--test')) {
       console.error('❌ Twitter API error:', error.message);
     }
     
-    // Test image generation (if canvas available)
+    // Test NFT image fetching
     try {
-      const canvas = require('canvas');
-      console.log('3. Testing image generation...');
-      console.log('✅ Canvas available - Image generation will work');
+      console.log('3. Testing NFT image fetching...');
+      const testImageUrl = await getNFTImageUrl(AL_CABONE_CONTRACT, '1');
+      if (testImageUrl) {
+        console.log('✅ NFT image fetching works');
+      } else {
+        console.log('⚠️ NFT image fetching returned null - check API');
+      }
     } catch (error) {
-      console.log('⚠️ Canvas not available - Image generation will be skipped in this environment');
-      console.log('   (This is normal on Windows - will work in GitHub Actions)');
+      console.error('❌ NFT image fetching error:', error.message);
     }
     
     console.log('\n🧪 Test completed!');
