@@ -80,72 +80,11 @@ function isValidSaleEvent(sale) {
   return true;
 }
 
-// Message templates based on holder tier
-const messageTemplates = {
-  associate: [
-    "🎩 Word spreads through the shadows... A new face joins the Al Cabone family",
-    "🔫 The streets whisper of fresh blood entering our ranks",
-    "📰 FAMILY BULLETIN: New Associate welcomed into the fold"
-  ],
-  
-  soldier: [
-    "⚡ The family grows stronger. A Soldier expands their territory",
-    "🏛️ Respect earned on the streets. Another piece claimed",
-    "💀 The empire expands as loyalty is rewarded"
-  ],
-  
-  caporegime: [
-    "👔 The Commission takes notice. A Caporegime builds their crew",
-    "🗡️ Power consolidates. Another lieutenant strengthens their hold",
-    "⚖️ Justice is served. Territory secured by a rising Capo"
-  ],
-  
-  consigliere: [
-    "🎭 Wisdom guides the family. The Consigliere's counsel grows",
-    "📜 Ancient knowledge preserved. Another advisor ascends",
-    "🕴️ The inner circle expands. Trust has been earned"
-  ],
-  
-  underboss: [
-    "👑 The hierarchy shifts. An Underboss extends their reach",
-    "🏰 Loyalty rewarded at the highest levels of power",
-    "⚔️ The old guard strengthens. Empire secured"
-  ],
-  
-  godfather: [
-    "🏛️ The Don expands the empire. Legendary power grows",
-    "👑 BREAKING: Godfather secures another piece of the kingdom",
-    "💎 Ultimate authority. The Commission's vault expands"
-  ],
-  
-  commission: [
-    "🔥 UNPRECEDENTED: The Commission itself grows stronger",
-    "👑 THE ULTIMATE POWER MOVE: Commission adds to their legendary collection",
-    "🏛️ HISTORY MADE: The ruling class expands their dominion"
-  ]
-};
-
-const dynamicTemplates = {
-  // When big seller → small buyer
-  empire_falls: [
-    "🚨 EMPIRE CRUMBLES: {sellerTier} liquidates assets, {buyerTier} claims the spoils",
-    "📉 POWER VACUUM: {sellerTier}'s territory seized by rising {buyerTier}",
-    "⚡ CHANGING GUARD: Old money exits, new blood enters"
-  ],
-  
-  // When small seller → big buyer  
-  consolidation: [
-    "🏛️ ACQUISITION: {buyerTier} absorbs {sellerTier}'s operation",
-    "💰 BUYOUT: {buyerTier} expands empire, {sellerTier} cashes out",
-    "📈 MONOPOLY MOVE: {buyerTier} strengthens their stranglehold"
-  ],
-  
-  // Similar tiers
-  business_as_usual: [
-    "🤝 FAMILY BUSINESS: {buyerTier} and {sellerTier} conduct trade",
-    "⚖️ EQUAL EXCHANGE: Honor among {buyerTier}s",
-    "🎭 THE GAME CONTINUES: Territory shifts between equals"
-  ]
+// Short dynamic status messages based on transaction dynamics
+const statusTemplates = {
+  empire_falls: "POWER VACUUM",
+  consolidation: "EMPIRE EXPANSION", 
+  business_as_usual: "FAMILY BUSINESS"
 };
 
 
@@ -160,19 +99,6 @@ function getHolderTier(nftCount) {
   return 'associate';
 }
 
-// Get tier badge emoji
-function getTierBadge(tier) {
-  const badges = {
-    commission: '👑',
-    godfather: '🏛️',
-    underboss: '⚔️',
-    consigliere: '🎭',
-    caporegime: '👔',
-    soldier: '⚡',
-    associate: '🎩'
-  };
-  return badges[tier] || '🎩';
-}
 
 // Fetch recent sales from OpenSea with timestamp filtering
 async function fetchRecentSales() {
@@ -270,13 +196,13 @@ function getTierRank(tier) {
   return ranks[tier] || 1;
 }
 
-function getTransactionStory(buyerTier, sellerTier, buyerCount, sellerCount) {
+function getTransactionStatus(buyerTier, sellerTier) {
   const buyerRank = getTierRank(buyerTier);
   const sellerRank = getTierRank(sellerTier);
   
-  if (sellerRank > buyerRank + 1) return 'empire_falls';
-  if (buyerRank > sellerRank + 1) return 'consolidation';
-  return 'business_as_usual';
+  if (sellerRank > buyerRank + 1) return statusTemplates.empire_falls;
+  if (buyerRank > sellerRank + 1) return statusTemplates.consolidation;
+  return statusTemplates.business_as_usual;
 }
 
 /*Example tweet
@@ -533,17 +459,18 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
         sellerTier = getHolderTier(sellerCount);
       }
       
-      // Generate FBI-style message
-      const caseNum = Math.floor(Math.random() * 99999) + 10000;
+      // Generate case message with variety
+      const caseNum = generateCaseNumber();
       const shortBuyer = `${buyerAddress.slice(0, 6)}...${buyerAddress.slice(-4)}`;
+      const status = getTransactionStatus(buyerTier, sellerTier);
       
       const nftName = sale.nft?.name || sale.asset?.name || 'Unknown NFT';
-      const message = `🎭 CASE #AC-${caseNum}
+      const message = `🎭 CASE #${caseNum}
 New connection detected in Al Cabone network
 
 Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} NFTs)
 Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
-Status: FAMILY BUSINESS
+Status: ${status}
 
 💰 Value: ${formatPrice(sale)}
 🔍 #AlCabone #Gangster #NFT`;
