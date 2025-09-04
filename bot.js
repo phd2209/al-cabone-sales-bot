@@ -183,11 +183,11 @@ async function fetchRecentSales() {
     const lastCheck = await getLastCheckTime();
     const lastCheckTimestamp = Math.floor(new Date(lastCheck).getTime() / 1000);
     
+    // OpenSea deprecated occurred_after parameter in 2022 - use manual filtering
     const response = await axios.get(`https://api.opensea.io/api/v2/events/collection/${COLLECTION_SLUG}`, {
       params: {
         event_type: 'sale',
-        occurred_after: lastCheckTimestamp,
-        limit: 20
+        limit: 50 // Get more events to find recent ones
       },
       headers: {
         'X-API-KEY': process.env.OPENSEA_API_KEY
@@ -195,10 +195,16 @@ async function fetchRecentSales() {
     });
     
     const events = response.data.asset_events || response.data.events || [];
-    console.log(`Found ${events.length} sales since last check (${new Date(lastCheck).toISOString()})`);
+    
+    // Manual timestamp filtering (OpenSea deprecated occurred_after in 2022)
+    const recentEvents = events.filter(event => {
+      return event.event_timestamp > lastCheckTimestamp;
+    });
+    
+    console.log(`Found ${recentEvents.length} sales since last check (${new Date(lastCheck).toISOString()})`);
     
     // Filter for valid single sales only
-    return events.filter(isValidSaleEvent);
+    return recentEvents.filter(isValidSaleEvent);
   }).catch(error => {
     console.error('Failed to fetch sales after retries:', error.message);
     return [];
@@ -559,28 +565,21 @@ Status: FAMILY BUSINESS
         // Upload NFT image if available
         if (nftImageUrl) {
           try {
-            console.log(`Attempting to fetch image: ${nftImageUrl}`);
             const nftImageResponse = await axios.get(nftImageUrl, { 
               responseType: 'arraybuffer',
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/*,*/*;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive'
+                'Accept': 'image/*,*/*;q=0.8'
               },
               timeout: 10000
             });
             const nftImageBuffer = Buffer.from(nftImageResponse.data);
             const nftUpload = await twitterClient.v1.uploadMedia(nftImageBuffer, { mimeType: 'image/png' });
             mediaIds.push(nftUpload);
-            console.log(`📸 Added NFT image from: ${nftImageUrl}`);
+            console.log(`📸 Added NFT image`);
           } catch (imageError) {
-            console.error('Error fetching NFT image:', imageError.message);
-            console.error('Image URL that failed:', nftImageUrl);
-            console.log('Continuing without image...');
+            console.log('Continuing without image (fetch failed)...');
           }
-        } else {
-          console.log('No NFT image URL available');
         }
         
         // Try posting tweet (with graceful fallback)
