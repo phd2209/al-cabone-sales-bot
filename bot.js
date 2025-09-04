@@ -532,15 +532,15 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
       const shortBuyer = `${buyerAddress.slice(0, 6)}...${buyerAddress.slice(-4)}`;
       
       const nftName = sale.nft?.name || sale.asset?.name || 'Unknown NFT';
-      const message = `🚨 FBI ALERT: CASE #AC-${caseNum}
+      const message = `🎭 CASE #AC-${caseNum}
 New connection detected in Al Cabone network
 
 Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} NFTs)
 Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
-Status: ACTIVE INVESTIGATION
+Status: FAMILY BUSINESS
 
 💰 Value: ${formatPrice(sale)}
-🔍 #AlCabone #FBI #Investigation`;
+🔍 #AlCabone #Gangster #NFT`;
       
       // Get NFT image URL and use OpenSea URL from API response
       const tokenId = sale.nft.identifier;
@@ -559,11 +559,16 @@ Status: ACTIVE INVESTIGATION
         // Upload NFT image if available
         if (nftImageUrl) {
           try {
+            console.log(`Attempting to fetch image: ${nftImageUrl}`);
             const nftImageResponse = await axios.get(nftImageUrl, { 
               responseType: 'arraybuffer',
               headers: {
-                'User-Agent': 'AlCabone-Sales-Bot/1.0'
-              }
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/*,*/*;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive'
+              },
+              timeout: 10000
             });
             const nftImageBuffer = Buffer.from(nftImageResponse.data);
             const nftUpload = await twitterClient.v1.uploadMedia(nftImageBuffer, { mimeType: 'image/png' });
@@ -571,8 +576,11 @@ Status: ACTIVE INVESTIGATION
             console.log(`📸 Added NFT image from: ${nftImageUrl}`);
           } catch (imageError) {
             console.error('Error fetching NFT image:', imageError.message);
+            console.error('Image URL that failed:', nftImageUrl);
             console.log('Continuing without image...');
           }
+        } else {
+          console.log('No NFT image URL available');
         }
         
         // Try posting tweet (with graceful fallback)
@@ -584,6 +592,12 @@ Status: ACTIVE INVESTIGATION
           console.log(`✅ Posted tweet for ${nftName}`);
         } catch (tweetError) {
           console.error('Twitter posting error:', tweetError.message);
+          console.error('Tweet content length:', messageWithLink.length);
+          console.error('Tweet content preview:', messageWithLink.substring(0, 100) + '...');
+          if (tweetError.data) {
+            console.error('Twitter API error details:', JSON.stringify(tweetError.data, null, 2));
+          }
+          
           // Try posting without media as fallback
           if (mediaIds.length > 0) {
             console.log('Retrying without image...');
@@ -592,6 +606,9 @@ Status: ACTIVE INVESTIGATION
               console.log(`✅ Posted tweet (no image) for ${nftName}`);
             } catch (fallbackError) {
               console.error('Fallback tweet also failed:', fallbackError.message);
+              if (fallbackError.data) {
+                console.error('Fallback error details:', JSON.stringify(fallbackError.data, null, 2));
+              }
             }
           }
         }
