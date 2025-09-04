@@ -493,22 +493,16 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
       
       console.log(`Processing sale: ${sale.nft?.name || sale.asset?.name || 'Unknown NFT'}`);
       
-      // Debug: Log the sale object structure
-      console.log('Sale object keys:', Object.keys(sale));
-      if (sale.buyer) console.log('Buyer keys:', Object.keys(sale.buyer));
-      if (sale.seller) console.log('Seller keys:', Object.keys(sale.seller));
-      if (sale.winner_account) console.log('Winner account keys:', Object.keys(sale.winner_account));
-      if (sale.from_account) console.log('From account keys:', Object.keys(sale.from_account));
-      
-      // Get buyer and seller information with proper error handling
-      let buyerAddress = sale.buyer?.address || sale.buyer?.user?.wallet_address || sale.winner_account?.address || sale.winner_account?.user?.wallet_address;
-      let sellerAddress = sale.seller?.address || sale.seller?.user?.wallet_address || sale.from_account?.address || sale.from_account?.user?.wallet_address;
+      // Get buyer and seller addresses (they are direct strings in OpenSea API v2)
+      let buyerAddress = sale.buyer;
+      let sellerAddress = sale.seller;
       
       if (!buyerAddress) {
         console.error('No buyer address found in sale data');
-        console.log('Full sale object:', JSON.stringify(sale, null, 2));
         continue;
       }
+      
+      console.log(`🔍 Buyer: ${buyerAddress}, Seller: ${sellerAddress || 'Unknown'}`);
       
       const buyerCount = await getHolderNFTCount(buyerAddress);
       const buyerTier = getHolderTier(buyerCount);
@@ -536,10 +530,10 @@ Status: ACTIVE INVESTIGATION
 💰 Value: ${formatPrice(sale)}
 🔍 #AlCabone #FBI #Investigation`;
       
-      // Get NFT image URL and OpenSea link
-      const tokenId = sale.nft?.identifier || sale.asset?.token_id || sale.asset?.id;
-      const nftImageUrl = await getNFTImageUrl(AL_CABONE_CONTRACT, tokenId);
-      const openseaLink = getNFTOpenSeaLink(AL_CABONE_CONTRACT, tokenId);
+      // Get NFT image URL and use OpenSea URL from API response
+      const tokenId = sale.nft.identifier;
+      const nftImageUrl = sale.nft.image_url;
+      const openseaLink = sale.nft.opensea_url || getNFTOpenSeaLink(AL_CABONE_CONTRACT, tokenId);
       
       // Add OpenSea link to message
       const messageWithLink = `${message}
