@@ -491,14 +491,22 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
     
     for (const sale of salesToProcess) {
       
-      console.log(`Processing sale: ${sale.nft.name}`);
+      console.log(`Processing sale: ${sale.nft?.name || sale.asset?.name || 'Unknown NFT'}`);
+      
+      // Debug: Log the sale object structure
+      console.log('Sale object keys:', Object.keys(sale));
+      if (sale.buyer) console.log('Buyer keys:', Object.keys(sale.buyer));
+      if (sale.seller) console.log('Seller keys:', Object.keys(sale.seller));
+      if (sale.winner_account) console.log('Winner account keys:', Object.keys(sale.winner_account));
+      if (sale.from_account) console.log('From account keys:', Object.keys(sale.from_account));
       
       // Get buyer and seller information with proper error handling
-      let buyerAddress = sale.buyer?.address || sale.winner_account?.address;
-      let sellerAddress = sale.seller?.address || sale.from_account?.address;
+      let buyerAddress = sale.buyer?.address || sale.buyer?.user?.wallet_address || sale.winner_account?.address || sale.winner_account?.user?.wallet_address;
+      let sellerAddress = sale.seller?.address || sale.seller?.user?.wallet_address || sale.from_account?.address || sale.from_account?.user?.wallet_address;
       
       if (!buyerAddress) {
         console.error('No buyer address found in sale data');
+        console.log('Full sale object:', JSON.stringify(sale, null, 2));
         continue;
       }
       
@@ -517,19 +525,21 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
       const caseNum = Math.floor(Math.random() * 99999) + 10000;
       const shortBuyer = `${buyerAddress.slice(0, 6)}...${buyerAddress.slice(-4)}`;
       
+      const nftName = sale.nft?.name || sale.asset?.name || 'Unknown NFT';
       const message = `🚨 FBI ALERT: CASE #AC-${caseNum}
 New connection detected in Al Cabone network
 
 Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} NFTs)
-Acquired: "${sale.nft.name}" from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
+Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
 Status: ACTIVE INVESTIGATION
 
 💰 Value: ${formatPrice(sale)}
 🔍 #AlCabone #FBI #Investigation`;
       
       // Get NFT image URL and OpenSea link
-      const nftImageUrl = await getNFTImageUrl(AL_CABONE_CONTRACT, sale.nft.identifier);
-      const openseaLink = getNFTOpenSeaLink(AL_CABONE_CONTRACT, sale.nft.identifier);
+      const tokenId = sale.nft?.identifier || sale.asset?.token_id || sale.asset?.id;
+      const nftImageUrl = await getNFTImageUrl(AL_CABONE_CONTRACT, tokenId);
+      const openseaLink = getNFTOpenSeaLink(AL_CABONE_CONTRACT, tokenId);
       
       // Add OpenSea link to message
       const messageWithLink = `${message}
@@ -558,7 +568,7 @@ Status: ACTIVE INVESTIGATION
           media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
         });
         
-        console.log(`✅ Posted tweet for ${sale.nft.name}`);
+        console.log(`✅ Posted tweet for ${nftName}`);
         
         // Wait between posts to avoid rate limiting
         await sleep(TWITTER_DELAY);
