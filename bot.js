@@ -209,65 +209,46 @@ async function fetchRecentSales() {
   });
 }
 
-// Get holder's total NFT count with pagination for accuracy
+// Get holder's total NFT count using OpenSea API v2
 async function getHolderNFTCount(walletAddress) {
   return await apiCallWithRetry(async () => {
     await sleep(OPENSEA_DELAY);
     
-    let totalCount = 0;
-    let cursor = null;
-    let hasMore = true;
-    
-    while (hasMore && totalCount < 1000) { // Safety limit
-      const params = {
-        owner: walletAddress,
+    const response = await axios.get(`https://api.opensea.io/api/v2/chain/ethereum/account/${walletAddress}/nfts`, {
+      params: {
         collection: COLLECTION_SLUG,
         limit: 200
-      };
-      
-      if (cursor) params.cursor = cursor;
-      
-      const response = await axios.get(`https://api.opensea.io/api/v1/assets`, {
-        params,
-        headers: {
-          'X-API-KEY': process.env.OPENSEA_API_KEY
-        }
-      });
-      
-      const assets = response.data.assets || [];
-      totalCount += assets.length;
-      
-      // Check if there are more results
-      cursor = response.data.next;
-      hasMore = !!cursor && assets.length === 200;
-      
-      if (hasMore) await sleep(OPENSEA_DELAY); // Rate limiting between pagination calls
-    }
-    
-    return Math.max(totalCount, 1); // Minimum 1 for new buyers
-  }).catch(error => {
-    console.error('Error fetching holder count:', error.message);
-    return 1;
-  });
-}
-
-// Get seller's NFT count (current holdings, not historical)
-async function getSellerNFTCount(walletAddress) {
-  return await apiCallWithRetry(async () => {
-    await sleep(OPENSEA_DELAY);
-    
-    const response = await axios.get(`https://api.opensea.io/api/v1/assets`, {
-      params: {
-        owner: walletAddress,
-        collection: COLLECTION_SLUG,
-        limit: 200 // Most sellers won't have more than 200
       },
       headers: {
         'X-API-KEY': process.env.OPENSEA_API_KEY
       }
     });
     
-    return response.data.assets?.length || 0;
+    const nfts = response.data.nfts || [];
+    return Math.max(nfts.length, 1); // Minimum 1 for new buyers
+  }).catch(error => {
+    console.error('Error fetching holder count:', error.message);
+    return 1;
+  });
+}
+
+// Get seller's NFT count using OpenSea API v2
+async function getSellerNFTCount(walletAddress) {
+  return await apiCallWithRetry(async () => {
+    await sleep(OPENSEA_DELAY);
+    
+    const response = await axios.get(`https://api.opensea.io/api/v2/chain/ethereum/account/${walletAddress}/nfts`, {
+      params: {
+        collection: COLLECTION_SLUG,
+        limit: 200
+      },
+      headers: {
+        'X-API-KEY': process.env.OPENSEA_API_KEY
+      }
+    });
+    
+    const nfts = response.data.nfts || [];
+    return nfts.length;
   }).catch(error => {
     console.error('Error fetching seller count:', error.message);
     return 0;
@@ -460,7 +441,8 @@ async function createSaleImage(sale, buyerTier, buyerCount, sellerTier, sellerCo
   // Suspect details
   ctx.fillStyle = '#ffffff';
   ctx.font = '16px Arial';
-  const shortBuyer = `${sale.winner_account.address.slice(0, 8)}...${sale.winner_account.address.slice(-4)}`;
+  const buyerAddr = sale.buyer?.address || sale.winner_account?.address || 'Unknown';
+  const shortBuyer = buyerAddr !== 'Unknown' ? `${buyerAddr.slice(0, 8)}...${buyerAddr.slice(-4)}` : 'Unknown';
   ctx.fillText(`Address: ${shortBuyer}`, 70, 180);
   ctx.fillText(`Rank: ${buyerTier.toUpperCase()} (${buyerCount} NFTs owned)`, 70, 200);
   ctx.fillText(`Status: ACTIVE INVESTIGATION`, 70, 220);
@@ -482,7 +464,8 @@ async function createSaleImage(sale, buyerTier, buyerCount, sellerTier, sellerCo
   }
   
   // Seller info
-  const shortSeller = sale.seller ? `${sale.seller.address?.slice(0, 8)}...${sale.seller.address?.slice(-4)}` : 'Unknown';
+  const sellerAddr = sale.seller?.address || sale.from_account?.address;
+  const shortSeller = sellerAddr ? `${sellerAddr.slice(0, 8)}...${sellerAddr.slice(-4)}` : 'Unknown';
   ctx.fillText(`Source: ${sellerTier ? sellerTier.toUpperCase() : 'UNKNOWN'} (${sellerCount || 0} NFTs)`, 70, 340);
   ctx.fillText(`Seller: ${shortSeller}`, 70, 360);
   
@@ -673,7 +656,7 @@ async function runBot() {
     const sales = await fetchRecentSales();
     console.log(`Found ${sales.length} valid sales to process`);
     
-    // Check if we should post daily floor alert
+    // Only post floor alert if no recent sales (avoid spamming)
     const shouldAlert = await shouldPostFloorAlert();
     
     if (sales.length === 0 && !shouldAlert) {
@@ -682,8 +665,8 @@ async function runBot() {
       return;
     }
     
-    // Post floor alert if needed (when no sales or as daily update)
-    if (shouldAlert) {
+    // Post floor alert only if no sales to process (prevent hitting rate limits)
+    if (shouldAlert && sales.length === 0) {
       console.log('🔍 Posting daily floor price alert...');
       try {
         const floorNFT = await getFloorPriceNFT();
@@ -739,21 +722,29 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
       
       console.log(`Processing sale: ${sale.nft.name}`);
       
-      // Get buyer and seller information  
-      const buyerCount = await getHolderNFTCount(sale.buyer);
+      // Get buyer and seller information with proper error handling
+      let buyerAddress = sale.buyer?.address || sale.winner_account?.address;
+      let sellerAddress = sale.seller?.address || sale.from_account?.address;
+      
+      if (!buyerAddress) {
+        console.error('No buyer address found in sale data');
+        continue;
+      }
+      
+      const buyerCount = await getHolderNFTCount(buyerAddress);
       const buyerTier = getHolderTier(buyerCount);
       
       // Get seller information if available
       let sellerCount = 0;
       let sellerTier = 'unknown';
-      if (sale.seller) {
-        sellerCount = await getSellerNFTCount(sale.seller);
+      if (sellerAddress) {
+        sellerCount = await getSellerNFTCount(sellerAddress);
         sellerTier = getHolderTier(sellerCount);
       }
       
       // Generate FBI-style message
       const caseNum = Math.floor(Math.random() * 99999) + 10000;
-      const shortBuyer = `${sale.buyer.slice(0, 6)}...${sale.buyer.slice(-4)}`;
+      const shortBuyer = `${buyerAddress.slice(0, 6)}...${buyerAddress.slice(-4)}`;
       
       const message = `🚨 FBI ALERT: CASE #AC-${caseNum}
 New connection detected in Al Cabone network
