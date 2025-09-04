@@ -436,8 +436,8 @@ async function runBot() {
           const floorPrice = formatPrice(floorNFT);
           const opensealink = `https://opensea.io/assets/ethereum/${AL_CABONE_CONTRACT}/${floorNFT.token_id}`;
           
-          // Get NFT image for embedding in card
-          const nftImageUrl = await getNFTImageUrl(AL_CABONE_CONTRACT, floorNFT.token_id);
+          // Use floor NFT image if available (no additional API call needed)
+          const nftImageUrl = null; // Skip images for floor alerts to avoid 403 errors
           
           const floorMessage = `🚨 DAILY SURVEILLANCE REPORT
 Case File #${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}
@@ -465,12 +465,24 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
             }
           }
           
-          await twitterClient.v2.tweet({
-            text: floorMessage,
-            media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
-          });
-          
-          console.log(`✅ Posted floor alert for ${floorNFT.name} at ${floorPrice}`);
+          try {
+            await twitterClient.v2.tweet({
+              text: floorMessage,
+              media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
+            });
+            console.log(`✅ Posted floor alert for ${floorNFT.name} at ${floorPrice}`);
+          } catch (tweetError) {
+            console.error('Floor alert tweet error:', tweetError.message);
+            // Try without media
+            if (mediaIds.length > 0) {
+              try {
+                await twitterClient.v2.tweet({ text: floorMessage });
+                console.log(`✅ Posted floor alert (no image) for ${floorNFT.name}`);
+              } catch (fallbackError) {
+                console.error('Floor alert fallback failed:', fallbackError.message);
+              }
+            }
+          }
           await updateLastFloorAlert();
           await sleep(TWITTER_DELAY);
         }
@@ -547,22 +559,42 @@ Status: ACTIVE INVESTIGATION
         // Upload NFT image if available
         if (nftImageUrl) {
           try {
-            const nftImageResponse = await axios.get(nftImageUrl, { responseType: 'arraybuffer' });
+            const nftImageResponse = await axios.get(nftImageUrl, { 
+              responseType: 'arraybuffer',
+              headers: {
+                'User-Agent': 'AlCabone-Sales-Bot/1.0'
+              }
+            });
             const nftImageBuffer = Buffer.from(nftImageResponse.data);
             const nftUpload = await twitterClient.v1.uploadMedia(nftImageBuffer, { mimeType: 'image/png' });
             mediaIds.push(nftUpload);
             console.log(`📸 Added NFT image from: ${nftImageUrl}`);
           } catch (imageError) {
             console.error('Error fetching NFT image:', imageError.message);
+            console.log('Continuing without image...');
           }
         }
         
-        await twitterClient.v2.tweet({
-          text: messageWithLink,
-          media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
-        });
-        
-        console.log(`✅ Posted tweet for ${nftName}`);
+        // Try posting tweet (with graceful fallback)
+        try {
+          await twitterClient.v2.tweet({
+            text: messageWithLink,
+            media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
+          });
+          console.log(`✅ Posted tweet for ${nftName}`);
+        } catch (tweetError) {
+          console.error('Twitter posting error:', tweetError.message);
+          // Try posting without media as fallback
+          if (mediaIds.length > 0) {
+            console.log('Retrying without image...');
+            try {
+              await twitterClient.v2.tweet({ text: messageWithLink });
+              console.log(`✅ Posted tweet (no image) for ${nftName}`);
+            } catch (fallbackError) {
+              console.error('Fallback tweet also failed:', fallbackError.message);
+            }
+          }
+        }
         
         // Wait between posts to avoid rate limiting
         await sleep(TWITTER_DELAY);
