@@ -290,8 +290,8 @@ async function shouldPostFloorAlert() {
     const now = new Date();
     const hoursSinceLastAlert = (now - lastAlert) / (1000 * 60 * 60);
     
-    // Post floor alert if it's been more than 20 hours
-    return hoursSinceLastAlert >= 20;
+    // Post floor alert if it's been more than 72 hours
+    return hoursSinceLastAlert >= 72;
   } catch (error) {
     return true; // If no record, post alert
   }
