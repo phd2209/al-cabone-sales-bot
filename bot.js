@@ -99,6 +99,15 @@ function getHolderTier(nftCount) {
   return 'associate';
 }
 
+// Check if seller is high-ranking for floor narrative
+function getFloorNarrative(sellerTier, sellerCount) {
+  if (['caporegime', 'consigliere', 'underboss', 'godfather', 'commission'].includes(sellerTier)) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 
 // Fetch recent sales from OpenSea with timestamp filtering
 async function fetchRecentSales() {
@@ -390,16 +399,30 @@ async function runBot() {
           // Use floor NFT image if available (no additional API call needed)
           const nftImageUrl = null; // Skip images for floor alerts to avoid 403 errors
           
-          const floorMessage = `Case File #${generateCaseNumber()}
+          // Generate narrative based on seller tier
+          const isHighRanking = getFloorNarrative(sellerTier, sellerCount);
+          
+          const floorMessage = isHighRanking ? 
+            `Case File #${generateCaseNumber()}
 
-Subject: Al Cabone Spotted 
-Status: MOST WANTED ON THE FLOOR from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
+Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} NFTs) listing on the floor
+Status: Possible dissolvement of higher ranks
 Price: ${floorPrice}
 Location: ${opensealink}
 
-Who'll recruit him?
+Note: Surveillance suggests instability among the top families.
 
-🔍 #AlCabone #FloorWatch`;
+#AlCabone #FloorWatch` :
+            `Case File #${generateCaseNumber()}
+
+Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} NFTs) abandons position
+Status: Dissatisfied gangster exits at floor
+Price: ${floorPrice}
+Location: ${opensealink}
+
+Note: Some soldiers appear unhappy with their syndicate.
+
+#AlCabone #FloorWatch`;
 
           // Simple tweet with NFT image if available
           const mediaIds = [];
