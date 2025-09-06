@@ -264,6 +264,7 @@ async function getFloorPriceNFT() {
         name: listing.protocol_data?.parameters?.offer?.[0]?.token || `Al Cabone NFT`,
         identifier: listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria,
         token_id: listing.protocol_data?.parameters?.offer?.[0]?.identifierOrCriteria,
+        seller_address: listing.maker?.address || listing.protocol_data?.parameters?.offerer,
         payment: {
           quantity: listing.price?.current?.value,
           decimals: listing.price?.current?.decimals || 18,
@@ -368,13 +369,21 @@ async function runBot() {
           const floorPrice = formatPrice(floorNFT);
           const opensealink = `https://opensea.io/assets/ethereum/${AL_CABONE_CONTRACT}/${floorNFT.token_id}`;
           
+          // Get seller information if available
+          let sellerCount = 0;
+          let sellerTier = 'unknown';
+          if (floorNFT.seller_address) {
+            sellerCount = await getSellerNFTCount(floorNFT.seller_address);
+            sellerTier = getHolderTier(sellerCount);
+          }
+          
           // Use floor NFT image if available (no additional API call needed)
           const nftImageUrl = null; // Skip images for floor alerts to avoid 403 errors
           
           const floorMessage = `Case File #${generateCaseNumber()}
 
 Subject: Al Cabone Spotted 
-Status: MOST WANTED ON THE FLOOR
+Status: MOST WANTED ON THE FLOOR from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
 Price: ${floorPrice}
 Location: ${opensealink}
 
