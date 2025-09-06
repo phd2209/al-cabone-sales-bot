@@ -337,10 +337,20 @@ async function getLastCheckTime() {
 
 // Update last check timestamp
 async function updateLastCheckTime() {
-  const data = {
-    lastCheck: new Date().toISOString()
-  };
-  await fs.writeFile('last-check.json', JSON.stringify(data, null, 2));
+  try {
+    let data = {};
+    try {
+      const fileData = await fs.readFile('last-check.json', 'utf8');
+      data = JSON.parse(fileData);
+    } catch (e) {
+      // File doesn't exist, start fresh
+    }
+    
+    data.lastCheck = new Date().toISOString();
+    await fs.writeFile('last-check.json', JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error('Error updating last check time:', error.message);
+  }
 }
 
 // Main bot function
