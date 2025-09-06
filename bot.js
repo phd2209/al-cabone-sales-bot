@@ -371,17 +371,16 @@ async function runBot() {
           // Use floor NFT image if available (no additional API call needed)
           const nftImageUrl = null; // Skip images for floor alerts to avoid 403 errors
           
-          const floorMessage = `🚨 DAILY SURVEILLANCE REPORT
-Case File #${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}
+          const floorMessage = `Case File #${generateCaseNumber()}
 
-Subject: Al Cabone spotted lurking in the marketplace
+Subject: Al Cabone Spotted 
 Status: MOST WANTED ON THE FLOOR
 Price: ${floorPrice}
 Location: ${opensealink}
 
-Note: "Cheap entry into the family. Question is — who'll recruit him?"
+Who'll recruit him?
 
-🔍 #AlCabone #FBI #FloorWatch #Investigation`;
+🔍 #AlCabone #FloorWatch`;
 
           // Simple tweet with NFT image if available
           const mediaIds = [];
@@ -405,6 +404,12 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
             console.log(`✅ Posted floor alert for ${floorNFT.name} at ${floorPrice}`);
           } catch (tweetError) {
             console.error('Floor alert tweet error:', tweetError.message);
+            if (tweetError.code) {
+              console.error('Error code:', tweetError.code);
+            }
+            if (tweetError.data) {
+              console.error('Error details:', JSON.stringify(tweetError.data, null, 2));
+            }
             // Try without media
             if (mediaIds.length > 0) {
               try {
@@ -412,6 +417,9 @@ Note: "Cheap entry into the family. Question is — who'll recruit him?"
                 console.log(`✅ Posted floor alert (no image) for ${floorNFT.name}`);
               } catch (fallbackError) {
                 console.error('Floor alert fallback failed:', fallbackError.message);
+                if (fallbackError.data) {
+                  console.error('Fallback error details:', JSON.stringify(fallbackError.data, null, 2));
+                }
               }
             }
           }
