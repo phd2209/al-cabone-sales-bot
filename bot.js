@@ -63,20 +63,20 @@ function formatPrice(sale) {
   return `${price} ${symbol}`;
 }
 
-// Filter valid sales (exclude bundles, accept offers, handle sweeps)
+// Filter valid sales (accept sweeps but process as single sales)
 function isValidSaleEvent(sale) {
   // Must be a sale event
   if (sale.event_type !== 'sale') return false;
-  
+
   // Must have NFT and buyer information
   if (!sale.nft || !sale.buyer) return false;
-  
-  // Skip bundle sales (multiple assets)
-  if (sale.quantity && parseInt(sale.quantity) > 1) return false;
-  
+
+  // Accept all quantities (including sweeps) - we'll post about one NFT from the transaction
+  // Note: Sweeps will be treated as single sales for posting to avoid X rate limits
+
   // Must have payment information for meaningful posts
   if (!sale.payment || !sale.payment.quantity) return false;
-  
+
   return true;
 }
 
@@ -405,7 +405,7 @@ async function runBot() {
           const floorMessage = isHighRanking ? 
             `Case File #${generateCaseNumber()}
 
-Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} NFTs) listing on the floor
+Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} Mobsters) listing on the floor
 Status: Possible dissolvement of higher ranks
 Price: ${floorPrice}
 Location: ${opensealink}
@@ -415,8 +415,8 @@ Note: Surveillance suggests instability among the top families.
 #AlCabone #FloorWatch` :
             `Case File #${generateCaseNumber()}
 
-Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} NFTs) abandons position
-Status: Dissatisfied gangster exits at floor
+Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} Mobsters) abandons position
+Status: Disgruntled mobster seeks new family
 Price: ${floorPrice}
 Location: ${opensealink}
 
@@ -513,17 +513,20 @@ Note: Some soldiers appear unhappy with their syndicate.
       const caseNum = generateCaseNumber();
       const shortBuyer = `${buyerAddress.slice(0, 6)}...${buyerAddress.slice(-4)}`;
       const status = getTransactionStatus(buyerTier, sellerTier);
-      
+
       const nftName = sale.nft?.name || sale.asset?.name || 'Unknown NFT';
+      const quantity = sale.quantity ? parseInt(sale.quantity) : 1;
+      const sweepNote = quantity > 1 ? `\n🧹 SWEEP DETECTED: ${quantity} Mobsters acquired in single transaction` : '';
+
       const message = `🎭 CASE #${caseNum}
 New connection detected in Al Cabone network
 
-Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} NFTs)
-Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} NFTs)
+Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} Mobsters)
+Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} Mobsters)${sweepNote}
 Status: ${status}
 
 💰 Value: ${formatPrice(sale)}
-🔍 #AlCabone #Gangster #NFT`;
+🔍 #AlCabone #Gangster #Mobsters`;
       
       // Get NFT image URL and use OpenSea URL from API response
       const tokenId = sale.nft.identifier;
