@@ -402,27 +402,21 @@ async function runBot() {
           // Generate narrative based on seller tier
           const isHighRanking = getFloorNarrative(sellerTier, sellerCount);
           
-          const floorMessage = isHighRanking ? 
-            `Case File #${generateCaseNumber()}
+          const floorMessage = isHighRanking ?
+            `FLOOR ALERT
 
-Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} Mobsters) listing on the floor
+${sellerTier.toUpperCase()} operative (${sellerCount} Mobsters) listing on floor
 Status: Possible dissolvement of higher ranks
 Price: ${floorPrice}
-Location: ${opensealink}
 
-Note: Surveillance suggests instability among the top families.
+${opensealink}` :
+            `FLOOR ALERT
 
-#AlCabone #FloorWatch` :
-            `Case File #${generateCaseNumber()}
-
-Subject: ${sellerTier.toUpperCase()} operative (${sellerCount} Mobsters) abandons position
+${sellerTier.toUpperCase()} operative (${sellerCount} Mobsters) abandons position
 Status: Disgruntled mobster seeks new family
 Price: ${floorPrice}
-Location: ${opensealink}
 
-Note: Some soldiers appear unhappy with their syndicate.
-
-#AlCabone #FloorWatch`;
+${opensealink}`;
 
           // Simple tweet with NFT image if available
           const mediaIds = [];
@@ -479,28 +473,40 @@ Note: Some soldiers appear unhappy with their syndicate.
       return;
     }
     
-    // Process up to 3 sales per run to avoid overwhelming Twitter
-    const salesToProcess = sales.slice(0, 3);
-    console.log(`Processing ${salesToProcess.length} sales...`);
-    
-    for (const sale of salesToProcess) {
-      
-      console.log(`Processing sale: ${sale.nft?.name || sale.asset?.name || 'Unknown NFT'}`);
-      
-      // Get buyer and seller addresses (they are direct strings in OpenSea API v2)
-      let buyerAddress = sale.buyer;
-      let sellerAddress = sale.seller;
-      
+    // Group sales by buyer + timestamp to detect sweeps
+    const salesByBuyer = {};
+    for (const sale of sales) {
+      const key = `${sale.buyer}_${sale.event_timestamp}`;
+      if (!salesByBuyer[key]) {
+        salesByBuyer[key] = [];
+      }
+      salesByBuyer[key].push(sale);
+    }
+
+    // Convert to array of grouped sales (sweeps or singles)
+    const groupedSales = Object.values(salesByBuyer).slice(0, 3); // Max 3 tweets per run
+    console.log(`Processing ${groupedSales.length} transactions (${sales.length} total sales)...`);
+
+    for (const salesGroup of groupedSales) {
+      const isSweep = salesGroup.length > 1;
+      const firstSale = salesGroup[0];
+
+      console.log(`Processing ${isSweep ? 'sweep' : 'sale'}: ${salesGroup.length} NFTs`);
+
+      // Get buyer and seller addresses
+      let buyerAddress = firstSale.buyer;
+      let sellerAddress = firstSale.seller;
+
       if (!buyerAddress) {
         console.error('No buyer address found in sale data');
         continue;
       }
-      
-      console.log(`🔍 Buyer: ${buyerAddress}, Seller: ${sellerAddress || 'Unknown'}`);
-      
+
+      console.log(`🔍 Buyer: ${buyerAddress}, ${isSweep ? 'SWEEP' : 'Single'}: ${salesGroup.length} NFT(s)`);
+
       const buyerCount = await getHolderNFTCount(buyerAddress);
       const buyerTier = getHolderTier(buyerCount);
-      
+
       // Get seller information if available
       let sellerCount = 0;
       let sellerTier = 'unknown';
@@ -508,44 +514,64 @@ Note: Some soldiers appear unhappy with their syndicate.
         sellerCount = await getSellerNFTCount(sellerAddress);
         sellerTier = getHolderTier(sellerCount);
       }
-      
-      // Generate case message with variety
+
+      // Generate case message
       const caseNum = generateCaseNumber();
       const shortBuyer = `${buyerAddress.slice(0, 6)}...${buyerAddress.slice(-4)}`;
       const status = getTransactionStatus(buyerTier, sellerTier);
 
-      const nftName = sale.nft?.name || sale.asset?.name || 'Unknown NFT';
-      const quantity = sale.quantity ? parseInt(sale.quantity) : 1;
-      const sweepNote = quantity > 1 ? `\n🧹 SWEEP DETECTED: ${quantity} Mobsters acquired in single transaction` : '';
+      // Calculate total value for sweeps
+      let totalValue = 0;
+      let message;
 
-      const message = `🎭 CASE #${caseNum}
-New connection detected in Al Cabone network
+      if (isSweep) {
+        // Sweep: sum all values and create sweep message
+        for (const sale of salesGroup) {
+          const payment = sale.payment;
+          if (payment && payment.quantity) {
+            const decimals = payment.decimals || 18;
+            totalValue += parseFloat(payment.quantity) / Math.pow(10, decimals);
+          }
+        }
+
+        const nftName = firstSale.nft?.name || firstSale.asset?.name || 'Unknown NFT';
+
+        message = `CASE #${caseNum}
 
 Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} Mobsters)
-Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} Mobsters)${sweepNote}
+Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} Mobsters)
+SWEEP: ${salesGroup.length} Mobsters acquired
 Status: ${status}
 
-💰 Value: ${formatPrice(sale)}
-🔍 #AlCabone #Gangster #Mobsters`;
-      
-      // Get NFT image URL and use OpenSea URL from API response
-      const tokenId = sale.nft.identifier;
-      const nftImageUrl = sale.nft.image_url;
-      const openseaLink = sale.nft.opensea_url || getNFTOpenSeaLink(AL_CABONE_CONTRACT, tokenId);
-      
-      // Add OpenSea link to message
-      const messageWithLink = `${message}
+Value: ${totalValue.toFixed(3)} ETH
 
-🔗 View on OpenSea: ${openseaLink}`;
-      
+${firstSale.nft.opensea_url || getNFTOpenSeaLink(AL_CABONE_CONTRACT, firstSale.nft.identifier)}`;
+      } else {
+        // Single sale
+        const nftName = firstSale.nft?.name || firstSale.asset?.name || 'Unknown NFT';
+
+        message = `CASE #${caseNum}
+
+Suspect: ${shortBuyer} (${buyerTier.toUpperCase()} - ${buyerCount} Mobsters)
+Acquired: "${nftName}" from ${sellerTier.toUpperCase()} (${sellerCount} Mobsters)
+Status: ${status}
+
+Value: ${formatPrice(firstSale)}
+
+${firstSale.nft.opensea_url || getNFTOpenSeaLink(AL_CABONE_CONTRACT, firstSale.nft.identifier)}`;
+      }
+
+      // Get NFT image URL from first sale
+      const nftImageUrl = firstSale.nft.image_url;
+
       // Post to Twitter with just NFT image
       try {
         const mediaIds = [];
-        
+
         // Upload NFT image if available
         if (nftImageUrl) {
           try {
-            const nftImageResponse = await axios.get(nftImageUrl, { 
+            const nftImageResponse = await axios.get(nftImageUrl, {
               responseType: 'arraybuffer',
               headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -561,28 +587,28 @@ Status: ${status}
             console.log('Continuing without image (fetch failed)...');
           }
         }
-        
+
         // Try posting tweet (with graceful fallback)
         try {
           await twitterClient.v2.tweet({
-            text: messageWithLink,
+            text: message,
             media: mediaIds.length > 0 ? { media_ids: mediaIds } : undefined
           });
-          console.log(`✅ Posted tweet for ${nftName}`);
+          console.log(`✅ Posted tweet for ${isSweep ? 'sweep of ' + salesGroup.length : 'sale'}`);
         } catch (tweetError) {
           console.error('Twitter posting error:', tweetError.message);
-          console.error('Tweet content length:', messageWithLink.length);
-          console.error('Tweet content preview:', messageWithLink.substring(0, 100) + '...');
+          console.error('Tweet content length:', message.length);
+          console.error('Tweet content preview:', message.substring(0, 100) + '...');
           if (tweetError.data) {
             console.error('Twitter API error details:', JSON.stringify(tweetError.data, null, 2));
           }
-          
+
           // Try posting without media as fallback
           if (mediaIds.length > 0) {
             console.log('Retrying without image...');
             try {
-              await twitterClient.v2.tweet({ text: messageWithLink });
-              console.log(`✅ Posted tweet (no image) for ${nftName}`);
+              await twitterClient.v2.tweet({ text: message });
+              console.log(`✅ Posted tweet (no image) for ${isSweep ? 'sweep' : 'sale'}`);
             } catch (fallbackError) {
               console.error('Fallback tweet also failed:', fallbackError.message);
               if (fallbackError.data) {
@@ -591,10 +617,10 @@ Status: ${status}
             }
           }
         }
-        
+
         // Wait between posts to avoid rate limiting
         await sleep(TWITTER_DELAY);
-        
+
       } catch (twitterError) {
         console.error('Twitter error:', twitterError.message);
       }
